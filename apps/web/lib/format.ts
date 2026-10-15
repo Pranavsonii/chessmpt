@@ -23,6 +23,9 @@ const timeFmt = new Intl.DateTimeFormat("en-GB", {
 /** "16/10/2026" */
 export const formatDate = (iso: string) => dateFmt.format(new Date(iso));
 
+/** "17:00 IST" */
+export const formatTime = (iso: string) => `${timeFmt.format(new Date(iso))} IST`;
+
 /** "16/10/2026, 17:00 IST" */
 export const formatDateTime = (iso: string) =>
   `${dateFmt.format(new Date(iso))}, ${timeFmt.format(new Date(iso))} IST`;

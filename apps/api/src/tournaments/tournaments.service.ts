@@ -1,9 +1,12 @@
 import {
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { isUniqueViolation } from '../common/db-errors';
+import { checkCanJoin, type JoinDecision } from './domain/join-rules';
 import { and, asc, count, eq, inArray, SQL, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { AuthUser } from '../auth/auth.types';
@@ -40,24 +43,46 @@ const NOT_FOUND = {
   message: 'Tournament not found',
 };
 
+/** Turns a refused JoinDecision into the matching HTTP exception. */
+function httpErrorFor(d: Extract<JoinDecision, { ok: false }>) {
+  const body = { code: d.code, message: d.message };
+  if (d.status === 403) return new ForbiddenException(body);
+  if (d.status === 404) return new NotFoundException(body);
+  return new ConflictException(body);
+}
+
 @Injectable()
 export class TournamentsService {
   constructor(@Inject(DB) private readonly db: Database) {}
 
   // ------------------------------------------------------------- reads
 
-  /** Tournaments + participant count + winner name in ONE query (no N+1). */
-  private async selectViews(where?: SQL): Promise<TournamentView[]> {
+  /**
+   * Tournaments + participant count + winner name in ONE query (no N+1).
+   * With a student viewer, also whether that student has joined each one.
+   */
+  private async selectViews(
+    where?: SQL,
+    studentId?: string,
+  ): Promise<TournamentView[]> {
     const winner = alias(users, 'winner');
     const participantCount = sql<number>`(
       select count(*)::int from ${tournamentParticipants}
       where ${tournamentParticipants.tournamentId} = ${tournaments.id}
     )`;
+    const isJoined = studentId
+      ? sql<boolean>`exists (
+          select 1 from ${tournamentParticipants}
+          where ${tournamentParticipants.tournamentId} = ${tournaments.id}
+            and ${tournamentParticipants.userId} = ${studentId}
+        )`
+      : sql<null>`null`;
 
     const rows = await this.db
       .select({
         t: tournaments,
         participantCount,
+        isJoined,
         winnerId: winner.id,
         winnerName: winner.name,
       })
@@ -73,13 +98,20 @@ export class TournamentsService {
         r.winnerId && r.winnerName
           ? { id: r.winnerId, name: r.winnerName }
           : null,
+        studentId ? Boolean(r.isJoined) : undefined,
       ),
     );
+  }
+
+  /** The student's id when the viewer is a student (for isJoined), else undefined. */
+  private studentIdOf(user: AuthUser) {
+    return user.role === 'student' ? user.id : undefined;
   }
 
   async list(
     user: AuthUser,
     statuses?: TournamentStatus[],
+    joinedOnly = false,
   ): Promise<TournamentView[]> {
     // Students can never list drafts, even if they ask for them.
     const allowed =
@@ -90,13 +122,26 @@ export class TournamentsService {
         : statuses;
 
     if (allowed && allowed.length === 0) return [];
-    return this.selectViews(
-      allowed ? inArray(tournaments.status, allowed) : undefined,
-    );
+
+    const filters: SQL[] = [];
+    if (allowed) filters.push(inArray(tournaments.status, allowed));
+    if (joinedOnly && user.role === 'student') {
+      filters.push(
+        sql`exists (
+          select 1 from ${tournamentParticipants}
+          where ${tournamentParticipants.tournamentId} = ${tournaments.id}
+            and ${tournamentParticipants.userId} = ${user.id}
+        )`,
+      );
+    }
+    return this.selectViews(and(...filters), this.studentIdOf(user));
   }
 
   async findOne(user: AuthUser, id: string): Promise<TournamentView> {
-    const [view] = await this.selectViews(eq(tournaments.id, id));
+    const [view] = await this.selectViews(
+      eq(tournaments.id, id),
+      this.studentIdOf(user),
+    );
     // A draft is invisible to students: answer 404, not 403, so its existence isn't revealed.
     if (
       !view ||
@@ -120,6 +165,62 @@ export class TournamentsService {
       .where(eq(tournamentParticipants.tournamentId, id))
       .orderBy(asc(tournamentParticipants.joinedAt));
     return rows.map((r) => ({ ...r, joinedAt: r.joinedAt.toISOString() }));
+  }
+
+  // ------------------------------------------------------------- join (student)
+
+  /**
+   * POST /tournaments/:id/join
+   *
+   * Runs in a transaction that reads the tournament with SELECT ... FOR SHARE.
+   * That row lock makes a concurrent status change (e.g. the coach clicking "Start")
+   * wait until this join commits, so a student can never slip in after registration
+   * closed. The composite primary key on tournament_participants is the final guard
+   * against a double join (two fast clicks).
+   */
+  async join(user: AuthUser, id: string): Promise<TournamentView> {
+    await this.db.transaction(async (tx) => {
+      const [t] = await tx
+        .select({ status: tournaments.status })
+        .from(tournaments)
+        .where(eq(tournaments.id, id))
+        .for('share');
+      if (!t) throw new NotFoundException(NOT_FOUND);
+
+      const existing = await tx
+        .select({ userId: tournamentParticipants.userId })
+        .from(tournamentParticipants)
+        .where(
+          and(
+            eq(tournamentParticipants.tournamentId, id),
+            eq(tournamentParticipants.userId, user.id),
+          ),
+        );
+
+      const decision = checkCanJoin({
+        role: user.role,
+        status: t.status,
+        alreadyJoined: existing.length > 0,
+      });
+      if (!decision.ok) throw httpErrorFor(decision);
+
+      try {
+        await tx
+          .insert(tournamentParticipants)
+          .values({ tournamentId: id, userId: user.id });
+      } catch (err) {
+        // Two requests passed the check at the same time; the primary key caught the second.
+        if (isUniqueViolation(err)) {
+          throw new ConflictException({
+            code: 'ALREADY_JOINED',
+            message: 'You have already joined this tournament',
+          });
+        }
+        throw err;
+      }
+    });
+
+    return this.findOne(user, id);
   }
 
   // ------------------------------------------------------------- writes (coach)

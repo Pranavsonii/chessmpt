@@ -12,6 +12,8 @@ export interface TournamentView {
   status: TournamentStatus;
   participantCount: number;
   winner: { id: string; name: string } | null;
+  /** Only present when a student is asking: has THIS student joined? */
+  isJoined?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -26,8 +28,10 @@ export function toTournamentView(
   t: Tournament,
   participantCount: number,
   winner: { id: string; name: string } | null,
+  isJoined?: boolean,
 ): TournamentView {
   return {
+    ...(isJoined !== undefined && { isJoined }),
     id: t.id,
     name: t.name,
     timeControl: formatTimeControl(t),

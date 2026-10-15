@@ -2,6 +2,7 @@ import { Transform } from 'class-transformer';
 import {
   ArrayNotEmpty,
   IsArray,
+  IsBoolean,
   IsIn,
   IsISO8601,
   IsOptional,
@@ -98,4 +99,12 @@ export class ListTournamentsQueryDto {
     message: `status must be among: ${STATUSES.join(', ')}`,
   })
   status?: TournamentStatus[];
+
+  /** Students only: ?joined=true lists just the tournaments they joined. */
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    value === 'true' ? true : value === 'false' ? false : value,
+  )
+  @IsBoolean({ message: 'joined must be true or false' })
+  joined?: boolean;
 }

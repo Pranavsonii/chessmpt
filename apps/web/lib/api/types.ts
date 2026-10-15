@@ -48,6 +48,8 @@ export interface Tournament {
   status: TournamentStatus;
   participantCount: number;
   winner: { id: string; name: string } | null;
+  /** Only sent to students: has the current student joined? */
+  isJoined?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -56,6 +58,52 @@ export interface Participant {
   id: string;
   name: string;
   joinedAt: string;
+}
+
+// ---------------------------------------------------------------- player (student)
+
+export type Color = "white" | "black";
+export type Outcome = "win" | "loss" | "draw";
+export type MatchResult = "1-0" | "0-1" | "1/2-1/2";
+export type MatchTermination =
+  | "checkmate"
+  | "resignation"
+  | "timeout"
+  | "stalemate"
+  | "insufficient_material"
+  | "threefold_repetition"
+  | "fifty_move_rule"
+  | "draw_agreement";
+
+export interface PlayerRef {
+  id: string;
+  name: string;
+}
+
+export interface ActiveMatch {
+  matchId: string;
+  tournament: { id: string; name: string };
+  color: Color;
+  opponent: PlayerRef;
+  startedAt: string;
+}
+
+export interface Schedule {
+  tournaments: Tournament[];
+  activeMatch: ActiveMatch | null;
+}
+
+export interface MatchHistoryItem {
+  id: string;
+  tournament: { id: string; name: string };
+  color: Color;
+  opponent: PlayerRef;
+  status: "completed" | "aborted";
+  result: MatchResult | null;
+  outcome: Outcome | null;
+  termination: MatchTermination | null;
+  startedAt: string;
+  endedAt: string | null;
 }
 
 export interface TournamentInput {

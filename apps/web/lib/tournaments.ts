@@ -14,10 +14,13 @@ const enc = encodeURIComponent;
 
 // ------------------------------------------------------------- queries
 
-export function useTournaments(statuses?: TournamentStatus[]) {
-  const qs = statuses?.length ? `?status=${statuses.join(",")}` : "";
+export function useTournaments(statuses?: TournamentStatus[], opts: { joined?: boolean } = {}) {
+  const params = new URLSearchParams();
+  if (statuses?.length) params.set("status", statuses.join(","));
+  if (opts.joined) params.set("joined", "true");
+  const qs = params.size ? `?${params}` : "";
   return useQuery({
-    queryKey: queryKeys.tournaments.list(statuses),
+    queryKey: [...queryKeys.tournaments.list(statuses), opts.joined ? "joined" : "any"],
     queryFn: () => apiFetch<Tournament[]>(`/tournaments${qs}`),
   });
 }
@@ -84,6 +87,25 @@ export function useDeleteTournament(id: string) {
       // The detail no longer exists: drop it instead of refetching into a 404.
       qc.removeQueries({ queryKey: queryKeys.tournaments.detail(id) });
       return qc.invalidateQueries({ queryKey: queryKeys.tournaments.all });
+    },
+  });
+}
+
+// ------------------------------------------------------------- join (student)
+
+export function useJoinTournament(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<Tournament>(`/tournaments/${enc(id)}/join`, { method: "POST" }),
+    onSuccess: (tournament) => {
+      // The response is the fresh tournament: show it immediately, then refresh the rest
+      // (lists, participant list, the student's schedule).
+      qc.setQueryData(queryKeys.tournaments.detail(id), tournament);
+      return Promise.all([
+        qc.invalidateQueries({ queryKey: queryKeys.tournaments.all }),
+        qc.invalidateQueries({ queryKey: queryKeys.player.all }),
+      ]);
     },
   });
 }

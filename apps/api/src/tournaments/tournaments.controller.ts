@@ -30,7 +30,14 @@ export class TournamentsController {
 
   @Get()
   list(@CurrentUser() user: AuthUser, @Query() query: ListTournamentsQueryDto) {
-    return this.tournaments.list(user, query.status);
+    return this.tournaments.list(user, query.status, query.joined);
+  }
+
+  /** POST /api/v1/tournaments/:id/join → 201 with the tournament (isJoined: true). */
+  @Roles('student')
+  @Post(':id/join')
+  join(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.tournaments.join(user, id);
   }
 
   @Get(':id')

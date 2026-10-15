@@ -4,6 +4,7 @@ import { AuthModule } from './auth/auth.module';
 import { validateEnv } from './config/env.validation';
 import { DbModule } from './db/db.module';
 import { HealthModule } from './health/health.module';
+import { PlayersModule } from './players/players.module';
 import { TournamentsModule } from './tournaments/tournaments.module';
 
 @Module({
@@ -18,6 +19,7 @@ import { TournamentsModule } from './tournaments/tournaments.module';
     AuthModule,
     HealthModule,
     TournamentsModule,
+    PlayersModule,
   ],
 })
 export class AppModule {}
