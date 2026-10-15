@@ -1,0 +1,11 @@
+import { Module } from '@nestjs/common';
+import { MatchmakingController } from './matchmaking.controller';
+import { MatchmakingService } from './matchmaking.service';
+
+@Module({
+  controllers: [MatchmakingController],
+  providers: [MatchmakingService],
+  // Exported for the Socket.IO gateway (Phase 7): it calls leaveAll() on disconnect.
+  exports: [MatchmakingService],
+})
+export class MatchmakingModule {}

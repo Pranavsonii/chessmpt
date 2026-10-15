@@ -106,6 +106,13 @@ export interface MatchHistoryItem {
   endedAt: string | null;
 }
 
+// ---------------------------------------------------------------- matchmaking
+
+export type QueueStatus =
+  | { state: "idle" }
+  | { state: "searching"; tournamentId: string; since: string; waiting: number }
+  | { state: "matched"; tournamentId: string; matchId: string };
+
 export interface TournamentInput {
   name: string;
   timeControl: string;
