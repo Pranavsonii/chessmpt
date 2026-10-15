@@ -1,0 +1,21 @@
+# dependencies
+node_modules/
+
+# builds
+dist/
+.next/
+out/
+coverage/
+
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# logs & OS
+*.log
+.DS_Store
+Thumbs.db
+
+# personal notes (not part of the submission)
+docs/development-plan.html
