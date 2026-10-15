@@ -99,6 +99,16 @@ async function seedTournaments(db: Database) {
 
 async function main() {
   loadEnv();
+  // The seed UPSERTS these accounts with published passwords: on a real database it
+  // would reset those users' passwords to values anyone can read in the README.
+  if (
+    process.env.NODE_ENV === 'production' &&
+    process.env.ALLOW_SEED !== 'true'
+  ) {
+    throw new Error(
+      'Refusing to seed a production database (it resets demo accounts to known passwords). Set ALLOW_SEED=true to override.',
+    );
+  }
   const pool = createPool(requireDatabaseUrl());
   const db = createDb(pool);
   try {

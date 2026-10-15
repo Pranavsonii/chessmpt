@@ -10,7 +10,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-chess}
       POSTGRES_DB: ${POSTGRES_DB:-chess}
     ports:
-      - "${POSTGRES_PORT:-5433}:5432"
+      # Loopback only: the dev database (default password!) is not reachable from the LAN.
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:

@@ -56,6 +56,7 @@ export class TournamentsController {
     return this.tournaments.participants(user, id);
   }
 
+  /** Both roles (same visibility as the tournament itself). */
   @Get(':id/leaderboard')
   leaderboard(
     @CurrentUser() user: AuthUser,
@@ -64,12 +65,11 @@ export class TournamentsController {
     return this.tournaments.leaderboard(user, id);
   }
 
+  /** Per-game results for the coach's stats page. */
+  @Roles('coach')
   @Get(':id/matches')
-  matches(
-    @CurrentUser() user: AuthUser,
-    @Param('id', ParseUUIDPipe) id: string,
-  ) {
-    return this.tournaments.matches(user, id);
+  results(@Param('id', ParseUUIDPipe) id: string) {
+    return this.tournaments.results(id);
   }
 
   @Roles('coach')

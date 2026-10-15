@@ -19,7 +19,8 @@ RUN npm ci -w apps/api --omit=dev && npm cache clean --force
 COPY --from=build /app/apps/api/dist apps/api/dist
 COPY apps/api/drizzle apps/api/drizzle
 COPY apps/api/docker-entrypoint.sh apps/api/docker-entrypoint.sh
-RUN chmod +x apps/api/docker-entrypoint.sh
+# Strip CR in case the file was checked out with Windows line endings anyway.
+RUN sed -i 's/\r$//' apps/api/docker-entrypoint.sh && chmod +x apps/api/docker-entrypoint.sh
 WORKDIR /app/apps/api
 USER node
 EXPOSE 4000

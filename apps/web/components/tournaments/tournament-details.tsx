@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { isApiError } from "@/lib/api/client";
 import type { Tournament } from "@/lib/api/types";
 import { formatDate, formatDateTime } from "@/lib/format";
+import { useTournamentLive } from "@/lib/standings";
 import { useParticipants, useTournament } from "@/lib/tournaments";
 
 /** Shared by the coach and student tournament pages. */
@@ -173,4 +174,10 @@ export function ParticipantsCard({
       </CardContent>
     </Card>
   );
+}
+
+/** Renders nothing; keeps the page's tournament data live over the socket while mounted. */
+export function LiveTournament({ id }: { id: string }) {
+  useTournamentLive(id);
+  return null;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Inbox, RotateCw } from "lucide-react";
+import { AlertTriangle, Inbox, Lock, RotateCw, SearchX, ServerCrash, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isApiError } from "@/lib/api/client";
@@ -21,15 +21,28 @@ export function LoadingState({ rows = 3, label = "Loading…" }: { rows?: number
   );
 }
 
+/** Different failures look different: offline is not the same problem as "no access". */
+function kindOf(error: unknown) {
+  if (!isApiError(error)) return { icon: AlertTriangle, title: "Something went wrong" };
+  if (error.status === 0) return { icon: WifiOff, title: "You're offline" };
+  if (error.status === 403) return { icon: Lock, title: "You don't have access" };
+  if (error.status === 404) return { icon: SearchX, title: "Not found" };
+  if (error.status >= 500) return { icon: ServerCrash, title: "The server is having trouble" };
+  return { icon: AlertTriangle, title: "Something went wrong" };
+}
+
 export function ErrorState({
   error,
   onRetry,
-  title = "Something went wrong",
+  title,
 }: {
   error: unknown;
   onRetry?: () => void;
+  /** Overrides the heading (e.g. "Couldn't load tournaments"). */
   title?: string;
 }) {
+  const kind = kindOf(error);
+  const Icon = kind.icon;
   const message = isApiError(error)
     ? error.message
     : "An unexpected error occurred. Please try again.";
@@ -38,10 +51,14 @@ export function ErrorState({
       role="alert"
       className="flex flex-col items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-6 py-10 text-center"
     >
-      <AlertTriangle className="size-8 text-destructive" aria-hidden />
+      <Icon className="size-8 text-destructive" aria-hidden />
       <div>
-        <p className="font-semibold">{title}</p>
+        <p className="font-semibold">{title ?? kind.title}</p>
         <p className="mt-1 text-sm text-muted-foreground">{message}</p>
+        {isApiError(error) && (
+          // A code people can quote when they report a problem.
+          <p className="mt-2 font-mono text-xs text-muted-foreground/80">Error code: {error.code}</p>
+        )}
       </div>
       {onRetry && (
         <Button variant="outline" size="sm" onClick={onRetry}>

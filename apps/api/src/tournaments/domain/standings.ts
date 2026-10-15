@@ -1,18 +1,25 @@
 import type { MatchResult } from '../../db/schema';
+import {
+  type Color,
+  outcomeFor,
+  type Outcome,
+} from '../../matches/domain/outcome';
 
 /**
- * Tournament standings, computed from finished games (compute-on-read: the match
- * results are the single source of truth, so standings can never drift from them).
+ * Tournament standings. Pure: no DB, recomputed from match results on every read,
+ * so the table can never drift from the games.
  *
- * Scoring uses integers only:
- * - points in HALF-points: win 2, draw 1, loss 0 (display ÷ 2 → 2½)
- * - Sonneborn-Berger in QUARTER-points: for each win add the opponent's
- *   half-points × 2, for each draw add them × 1 (display ÷ 4 → 3¼)
- * so every sum and every equality check in the tiebreaks is exact.
+ * Everything is an integer, so sums and tie comparisons are exact:
+ * - points in HALF-points: win 2, draw 1, loss 0 (2½ points is stored as 5)
+ * - Sonneborn-Berger in QUARTER-points: a draw against someone on 2½ adds 1¼
+ * Only the UI divides (by 2 and by 4) for display.
  *
- * Order: points → Sonneborn-Berger → wins → head-to-head (only when exactly two
- * players are still tied) → name. Name only makes the display order deterministic;
- * players still tied after head-to-head share a rank (competition ranking 1, 2, 2, 4).
+ * Order:
+ *   1. points (desc)
+ *   2. Sonneborn-Berger (desc): opponent's points for each win + half of them for each draw
+ *   3. wins (desc)
+ *   4. head-to-head, only when exactly two players are still tied
+ *   5. still tied: same rank ("1, 2, 2, 4"); listed by name for a stable display
  */
 
 export interface StandingPlayer {
@@ -20,8 +27,7 @@ export interface StandingPlayer {
   name: string;
 }
 
-/** A completed game. Aborted games never count and are filtered out by the caller. */
-export interface ScoredGame {
+export interface StandingGame {
   whiteId: string;
   blackId: string;
   result: MatchResult;
@@ -35,28 +41,43 @@ export interface StandingRow {
   wins: number;
   draws: number;
   losses: number;
-  /** Points × 2 (a win is 2). */
   halfPoints: number;
-  /** Sonneborn-Berger × 4. */
   sbQuarters: number;
 }
 
-/** Half-points the white and the black player get from one result. */
-function halfPointsOf(result: MatchResult): { white: number; black: number } {
-  if (result === '1-0') return { white: 2, black: 0 };
-  if (result === '0-1') return { white: 0, black: 2 };
-  return { white: 1, black: 1 };
+const HALF_POINTS: Record<Outcome, number> = { win: 2, draw: 1, loss: 0 };
+
+type Tally = Omit<StandingRow, 'rank'>;
+
+/** Ordered by criteria 1–3 only (negative = a ranks above b). */
+const byScore = (a: Tally, b: Tally) =>
+  b.halfPoints - a.halfPoints || b.sbQuarters - a.sbQuarters || b.wins - a.wins;
+
+/** a's half-points minus b's, over the games they played against each other. */
+function headToHead(a: string, b: string, games: StandingGame[]): number {
+  let diff = 0;
+  for (const g of games) {
+    const color: Color | null =
+      g.whiteId === a && g.blackId === b
+        ? 'white'
+        : g.blackId === a && g.whiteId === b
+          ? 'black'
+          : null;
+    if (!color) continue;
+    const forA = HALF_POINTS[outcomeFor(g.result, color)];
+    diff += forA - (2 - forA); // each game hands out 2 half-points in total
+  }
+  return diff;
 }
 
 export function computeStandings(
   players: StandingPlayer[],
-  games: ScoredGame[],
+  games: StandingGame[],
 ): StandingRow[] {
-  const rows = new Map<string, StandingRow>(
+  const tally = new Map<string, Tally>(
     players.map((p) => [
       p.id,
       {
-        rank: 0,
         userId: p.id,
         name: p.name,
         played: 0,
@@ -68,97 +89,68 @@ export function computeStandings(
       },
     ]),
   );
-  // Only games between two known participants count.
+  // Ignore games involving someone who isn't a participant (shouldn't happen).
   const counted = games.filter(
-    (g) => rows.has(g.whiteId) && rows.has(g.blackId),
+    (g) => tally.has(g.whiteId) && tally.has(g.blackId),
   );
 
-  // Pass 1: points and W/D/L.
+  // Pass 1: results and points.
   for (const g of counted) {
-    const hp = halfPointsOf(g.result);
-    for (const [id, got] of [
-      [g.whiteId, hp.white],
-      [g.blackId, hp.black],
-    ] as const) {
-      const r = rows.get(id)!;
-      r.played += 1;
-      r.halfPoints += got;
-      if (got === 2) r.wins += 1;
-      else if (got === 1) r.draws += 1;
-      else r.losses += 1;
+    for (const color of ['white', 'black'] as const) {
+      const row = tally.get(color === 'white' ? g.whiteId : g.blackId)!;
+      const outcome = outcomeFor(g.result, color);
+      row.played += 1;
+      row.halfPoints += HALF_POINTS[outcome];
+      if (outcome === 'win') row.wins += 1;
+      else if (outcome === 'draw') row.draws += 1;
+      else row.losses += 1;
     }
   }
 
-  // Pass 2: Sonneborn-Berger needs every opponent's FINAL score, hence a second pass.
+  // Pass 2: Sonneborn-Berger needs every opponent's FINAL points, so it comes after.
+  // Win: + opponent's half-points × 2 (in quarters). Draw: + opponent's half-points × 1.
   for (const g of counted) {
-    const hp = halfPointsOf(g.result);
-    const white = rows.get(g.whiteId)!;
-    const black = rows.get(g.blackId)!;
-    // got 2 (win) → opponent × 2, got 1 (draw) → opponent × 1, got 0 → nothing
-    white.sbQuarters += hp.white * black.halfPoints;
-    black.sbQuarters += hp.black * white.halfPoints;
+    const white = tally.get(g.whiteId)!;
+    const black = tally.get(g.blackId)!;
+    if (g.result === '1/2-1/2') {
+      white.sbQuarters += black.halfPoints;
+      black.sbQuarters += white.halfPoints;
+    } else if (g.result === '1-0') {
+      white.sbQuarters += black.halfPoints * 2;
+    } else {
+      black.sbQuarters += white.halfPoints * 2;
+    }
   }
 
-  const sorted = [...rows.values()].sort(
-    (a, b) => compareScores(a, b) || a.name.localeCompare(b.name),
+  const sorted = [...tally.values()].sort(
+    (a, b) => byScore(a, b) || a.name.localeCompare(b.name),
   );
-  return assignRanks(sorted, counted);
-}
 
-/** Negative when `a` ranks higher, 0 when tied on points, SB and wins. */
-function compareScores(a: StandingRow, b: StandingRow): number {
-  return (
-    b.halfPoints - a.halfPoints ||
-    b.sbQuarters - a.sbQuarters ||
-    b.wins - a.wins
-  );
-}
-
-/** Half-points `a` scored against `b` minus what `b` scored against `a`. */
-function headToHead(a: string, b: string, games: ScoredGame[]): number {
-  let diff = 0;
-  for (const g of games) {
-    const hp = halfPointsOf(g.result);
-    if (g.whiteId === a && g.blackId === b) diff += hp.white - hp.black;
-    else if (g.whiteId === b && g.blackId === a) diff += hp.black - hp.white;
-  }
-  return diff;
-}
-
-/**
- * Competition ranking over groups that are tied on points, SB and wins.
- * A group of exactly two is split by head-to-head when that is decisive.
- */
-function assignRanks(
-  sorted: StandingRow[],
-  games: ScoredGame[],
-): StandingRow[] {
-  const out: StandingRow[] = [];
-  let i = 0;
-  while (i < sorted.length) {
+  // Walk groups tied on criteria 1–3 and assign competition ranks.
+  const rows: StandingRow[] = [];
+  for (let i = 0; i < sorted.length;) {
     let j = i + 1;
-    while (j < sorted.length && compareScores(sorted[i], sorted[j]) === 0) j++;
+    while (j < sorted.length && byScore(sorted[i], sorted[j]) === 0) j++;
     const group = sorted.slice(i, j);
-    const rank = i + 1;
 
-    if (group.length === 2) {
-      const h2h = headToHead(group[0].userId, group[1].userId, games);
-      if (h2h !== 0) {
-        const [first, second] = h2h > 0 ? group : [group[1], group[0]];
-        out.push({ ...first, rank }, { ...second, rank: rank + 1 });
-        i = j;
-        continue;
-      }
+    const h2h =
+      group.length === 2
+        ? headToHead(group[0].userId, group[1].userId, counted)
+        : 0;
+    if (h2h !== 0) {
+      const [first, second] = h2h > 0 ? group : [group[1], group[0]];
+      rows.push({ ...first, rank: i + 1 }, { ...second, rank: i + 2 });
+    } else {
+      for (const r of group) rows.push({ ...r, rank: i + 1 });
     }
-    for (const r of group) out.push({ ...r, rank });
     i = j;
   }
-  return out;
+  return rows;
 }
 
 /**
- * The tournament winner(s): everyone ranked 1st, provided at least one game was
- * played. More than one entry means co-winners.
+ * Everyone on rank 1: one winner, or co-winners when still tied after every
+ * tiebreak. Nobody wins a tournament in which no game was played.
  */
 export function winnersOf(rows: StandingRow[]): StandingRow[] {
   if (!rows.some((r) => r.played > 0)) return [];

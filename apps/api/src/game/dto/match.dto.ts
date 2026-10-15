@@ -2,6 +2,12 @@ import { IsIn, IsInt, IsOptional, IsUUID, Matches, Min } from 'class-validator';
 
 const SQUARE = /^[a-h][1-8]$/;
 
+/** tournament:watch, tournament:unwatch */
+export class TournamentIdDto {
+  @IsUUID()
+  tournamentId: string;
+}
+
 /** match:join, match:leave, match:resign */
 export class MatchIdDto {
   @IsUUID()

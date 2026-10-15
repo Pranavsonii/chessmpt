@@ -6,10 +6,11 @@ import { useParams } from "next/navigation";
 import { ActiveMatchBanner } from "@/components/active-match-banner";
 import { FindOpponentCard } from "@/components/matchmaking/find-opponent-card";
 import { JoinButton } from "@/components/tournaments/join-button";
-import { LeaderboardCard, ResultsCard, WinnerBanner } from "@/components/tournaments/results";
 import { StatusBadge } from "@/components/tournaments/status-badge";
+import { LeaderboardCard, WinnerBanner } from "@/components/tournaments/leaderboard-card";
 import {
   BackLink,
+  LiveTournament,
   ParticipantsCard,
   TournamentFacts,
   TournamentLoader,
@@ -18,18 +19,18 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import type { Tournament } from "@/lib/api/types";
 import { useMe } from "@/lib/auth";
-import { useWatchTournament } from "@/lib/tournaments";
 
 export default function StudentTournamentPage() {
   const { id } = useParams<{ id: string }>();
   const { data: me } = useMe();
-  useWatchTournament(id);
 
   return (
     <TournamentLoader id={id} back={<BackLink href="/student" label="Tournaments" />}>
       {(t) => (
         <>
+          <LiveTournament id={t.id} />
           <ActiveMatchBanner />
+          <WinnerBanner tournamentId={t.id} />
           <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
             <div className="space-y-2">
               <StatusBadge status={t.status} />
@@ -40,15 +41,13 @@ export default function StudentTournamentPage() {
             <JoinButton tournament={t} />
           </div>
 
-          <WinnerBanner tournament={t} />
           <PlayCard tournament={t} />
           <TournamentFacts tournament={t} />
 
           <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_2fr]">
             <ParticipantsCard tournament={t} meId={me?.id} />
-            <LeaderboardCard tournament={t} meId={me?.id} />
+            <LeaderboardCard tournamentId={t.id} meId={me?.id} />
           </div>
-          <ResultsCard tournament={t} meId={me?.id} />
         </>
       )}
     </TournamentLoader>

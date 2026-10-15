@@ -12,6 +12,7 @@ import type { QueueStatus, Tournament } from "@/lib/api/types";
 import { useCancelSearch, useFindOpponent, useQueueStatus } from "@/lib/matchmaking";
 import { queryKeys } from "@/lib/query-keys";
 import { useSocket } from "@/lib/socket";
+import { notifyError } from "@/lib/notify";
 
 /**
  * "Find opponent" for a joined student in an ongoing tournament.
@@ -65,7 +66,7 @@ export function FindOpponentCard({ tournament }: { tournament: Tournament }) {
           router.push(`/student/play/${existing}`);
           return;
         }
-        toast.error(isApiError(err) ? err.message : "Couldn't start searching. Please try again.");
+        notifyError(err, "Couldn't start searching");
       },
     });
   }

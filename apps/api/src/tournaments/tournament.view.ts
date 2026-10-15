@@ -1,6 +1,6 @@
 import type {
+  Match,
   MatchResult,
-  MatchStatus,
   MatchTermination,
   Tournament,
   TournamentStatus,
@@ -31,6 +31,34 @@ export interface ParticipantView {
   joinedAt: string;
 }
 
+/**
+ * GET /tournaments/:id/leaderboard. Points are in half-points and Sonneborn-Berger
+ * in quarter-points (integers, exact); the client divides for display.
+ */
+export interface LeaderboardView {
+  tournamentId: string;
+  /** True once the tournament is completed: the order is final. */
+  final: boolean;
+  rows: StandingRow[];
+  /** Rank-1 players once final: one winner, or co-winners on a shared first place. */
+  winners: { id: string; name: string }[];
+}
+
+/** One game in GET /tournaments/:id/matches (coach stats). */
+export interface TournamentMatchView {
+  id: string;
+  white: { id: string; name: string };
+  black: { id: string; name: string };
+  status: Match['status'];
+  result: MatchResult | null;
+  termination: MatchTermination | null;
+  plies: number;
+  startedAt: string;
+  endedAt: string | null;
+  durationMs: number | null;
+  pgn: string | null;
+}
+
 export function toTournamentView(
   t: Tournament,
   participantCount: number,
@@ -51,30 +79,4 @@ export function toTournamentView(
     createdAt: t.createdAt.toISOString(),
     updatedAt: t.updatedAt.toISOString(),
   };
-}
-
-/** GET /tournaments/:id/leaderboard */
-export interface LeaderboardView {
-  tournamentId: string;
-  status: TournamentStatus;
-  /** True once the tournament is completed: the standings can no longer change. */
-  final: boolean;
-  /** Integers only: halfPoints ÷ 2 and sbQuarters ÷ 4 for display. */
-  rows: StandingRow[];
-  /** Rank-1 players once final (more than one = co-winners); empty before that. */
-  winners: { id: string; name: string }[];
-}
-
-/** GET /tournaments/:id/matches: one row per game, newest first. */
-export interface TournamentMatchView {
-  id: string;
-  white: { id: string; name: string };
-  black: { id: string; name: string };
-  status: MatchStatus;
-  result: MatchResult | null;
-  termination: MatchTermination | null;
-  /** Half-moves played. */
-  plies: number;
-  startedAt: string;
-  endedAt: string | null;
 }

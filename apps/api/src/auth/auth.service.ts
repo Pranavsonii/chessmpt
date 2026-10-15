@@ -53,11 +53,26 @@ export class AuthService {
    * Used by the HTTP guard now and by the Socket.IO handshake later.
    */
   verifyToken(token: string): AuthUser | null {
+    return this.verifySession(token)?.user ?? null;
+  }
+
+  /**
+   * Like verifyToken, plus when the token expires (epoch ms). A Socket.IO connection
+   * outlives the request that opened it, so the gateway uses this to drop the
+   * socket the moment the session it was opened with ends.
+   */
+  verifySession(token: string): { user: AuthUser; expiresAt: number } | null {
     try {
-      const payload = this.jwt.verify<Partial<JwtPayload>>(token);
+      const payload = this.jwt.verify<Partial<JwtPayload> & { exp?: number }>(
+        token,
+      );
       const roleOk = payload.role === 'coach' || payload.role === 'student';
       if (typeof payload.sub !== 'string' || !roleOk) return null;
-      return { id: payload.sub, role: payload.role! };
+      if (typeof payload.exp !== 'number') return null; // we always sign with an expiry
+      return {
+        user: { id: payload.sub, role: payload.role! },
+        expiresAt: payload.exp * 1000,
+      };
     } catch {
       return null; // bad signature, expired, malformed...
     }

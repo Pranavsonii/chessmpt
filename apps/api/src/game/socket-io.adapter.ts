@@ -2,6 +2,8 @@ import type { INestApplicationContext } from '@nestjs/common';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import type { ServerOptions } from 'socket.io';
 
+const MAX_MESSAGE_BYTES = 16 * 1024;
+
 /**
  * Socket.IO server locked to the web origin.
  *
@@ -27,6 +29,9 @@ export class SocketIoAdapter extends IoAdapter {
       ...options,
       cors: { origin: this.webOrigin, credentials: true },
       allowRequest,
+      // Every client message is tiny (a move is ~150 bytes). The 1 MB default would
+      // let one socket make the server buffer and parse megabytes per message.
+      maxHttpBufferSize: MAX_MESSAGE_BYTES,
     });
   }
 }

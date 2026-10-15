@@ -7,6 +7,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
+import { LoginRateLimiter } from './login-rate-limiter';
 import { MeController } from './me.controller';
 
 @Module({
@@ -27,6 +28,7 @@ import { MeController } from './me.controller';
   controllers: [AuthController, MeController],
   providers: [
     AuthService,
+    LoginRateLimiter,
     // Global guards run in this order for every HTTP route: authenticate, then authorise.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },

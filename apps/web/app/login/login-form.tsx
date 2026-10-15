@@ -1,34 +1,74 @@
 "use client";
 
-import { Loader2, TriangleAlert } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { FieldError, Notice } from "@/components/notice";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/ui/password-input";
 import { isApiError } from "@/lib/api/client";
 import { useLogin } from "@/lib/auth";
+import { collectErrors, validateEmail, validatePassword } from "@/lib/validation";
+
+type Field = "email" | "password";
+
+/** Turns a failed login into a message the user can act on. */
+function describeLoginError(error: unknown): { title: string; text: string } {
+  if (!isApiError(error)) return { title: "Something went wrong", text: "Please try again." };
+  switch (error.code) {
+    case "INVALID_CREDENTIALS":
+      return { title: "Wrong email or password", text: "Check both and try again." };
+    case "TOO_MANY_LOGIN_ATTEMPTS":
+      return { title: "Too many attempts", text: error.message };
+    case "NETWORK_ERROR":
+      return { title: "You're offline", text: error.message };
+    default:
+      return { title: "Couldn't log you in", text: error.message };
+  }
+}
 
 export function LoginForm() {
   const params = useSearchParams();
   const login = useLogin(params.get("next"));
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [values, setValues] = useState<Record<Field, string>>({ email: "", password: "" });
+  // A field shows its error only once the user has left it (or submitted).
+  const [touched, setTouched] = useState<Record<Field, boolean>>({ email: false, password: false });
+  const [showSessionNote, setShowSessionNote] = useState(params.get("expired") === "1");
+  const [errorDismissed, setErrorDismissed] = useState(false);
 
-  const fieldErrors = isApiError(login.error) ? login.error.fieldErrors : {};
+  const clientErrors = collectErrors<Field>({
+    email: validateEmail(values.email),
+    password: validatePassword(values.password),
+  });
+  const serverFieldErrors = isApiError(login.error) ? login.error.fieldErrors : {};
+  const errorOf = (f: Field) => (touched[f] ? clientErrors[f] : undefined) ?? serverFieldErrors[f];
+
   const formError =
-    login.error && Object.keys(fieldErrors).length === 0
-      ? isApiError(login.error)
-        ? login.error.message
-        : "Something went wrong. Please try again."
+    login.error && !errorDismissed && Object.keys(serverFieldErrors).length === 0
+      ? describeLoginError(login.error)
       : null;
+
+  const set = (f: Field) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setValues((v) => ({ ...v, [f]: e.target.value }));
+  const blur = (f: Field) => () => setTouched((t) => ({ ...t, [f]: true }));
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    login.mutate({ email, password });
+    setTouched({ email: true, password: true });
+    if (Object.keys(clientErrors).length > 0) {
+      // Put the cursor on the first problem so keyboard users aren't lost.
+      document.getElementById(clientErrors.email ? "email" : "password")?.focus();
+      return;
+    }
+    setErrorDismissed(false);
+    setShowSessionNote(false);
+    login.mutate({ email: values.email.trim(), password: values.password });
   }
+
+  const busy = login.isPending || login.isSuccess;
 
   return (
     <Card>
@@ -37,18 +77,16 @@ export function LoginForm() {
         <CardDescription>Log in with your academy account.</CardDescription>
       </CardHeader>
       <CardContent>
-        {params.get("expired") && !login.error && (
-          <Alert className="mb-4">
-            <AlertDescription>Your session ended. Please log in again.</AlertDescription>
-          </Alert>
-        )}
-
         <form onSubmit={onSubmit} className="space-y-4" noValidate>
+          {showSessionNote && !formError && (
+            <Notice kind="info" onDismiss={() => setShowSessionNote(false)}>
+              Your session ended. Please log in again.
+            </Notice>
+          )}
           {formError && (
-            <Alert variant="destructive">
-              <TriangleAlert />
-              <AlertDescription>{formError}</AlertDescription>
-            </Alert>
+            <Notice kind="error" title={formError.title} onDismiss={() => setErrorDismissed(true)}>
+              {formError.text}
+            </Notice>
           )}
 
           <div className="space-y-2">
@@ -56,39 +94,39 @@ export function LoginForm() {
             <Input
               id="email"
               type="email"
+              inputMode="email"
               autoComplete="email"
               placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              aria-invalid={!!fieldErrors.email}
+              value={values.email}
+              onChange={set("email")}
+              onBlur={blur("email")}
+              aria-invalid={!!errorOf("email")}
+              aria-describedby={errorOf("email") ? "email-error" : undefined}
+              maxLength={255}
               required
               autoFocus
             />
-            {fieldErrors.email && <p className="text-sm text-destructive">{fieldErrors.email}</p>}
+            <FieldError id="email-error">{errorOf("email")}</FieldError>
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="password">Password</Label>
-            <Input
+            <PasswordInput
               id="password"
-              type="password"
               autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              aria-invalid={!!fieldErrors.password}
+              value={values.password}
+              onChange={set("password")}
+              onBlur={blur("password")}
+              aria-invalid={!!errorOf("password")}
+              aria-describedby={errorOf("password") ? "password-error" : undefined}
+              maxLength={128}
               required
             />
-            {fieldErrors.password && (
-              <p className="text-sm text-destructive">{fieldErrors.password}</p>
-            )}
+            <FieldError id="password-error">{errorOf("password")}</FieldError>
           </div>
 
-          <Button
-            type="submit"
-            className="w-full"
-            disabled={login.isPending || login.isSuccess || !email || !password}
-          >
-            {login.isPending || login.isSuccess ? (
+          <Button type="submit" className="w-full" disabled={busy}>
+            {busy ? (
               <>
                 <Loader2 className="animate-spin" /> Logging in…
               </>
