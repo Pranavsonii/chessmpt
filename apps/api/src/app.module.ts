@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
 import { validateEnv } from './config/env.validation';
 import { DbModule } from './db/db.module';
+import { GameModule } from './game/game.module';
 import { HealthModule } from './health/health.module';
 import { PlayersModule } from './players/players.module';
 import { TournamentsModule } from './tournaments/tournaments.module';
@@ -20,6 +21,7 @@ import { TournamentsModule } from './tournaments/tournaments.module';
     HealthModule,
     TournamentsModule,
     PlayersModule,
+    GameModule,
   ],
 })
 export class AppModule {}

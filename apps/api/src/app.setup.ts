@@ -5,6 +5,7 @@ import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { buildValidationPipe } from './common/pipes/validation.pipe';
 import type { EnvironmentVariables } from './config/env.validation';
+import { SocketIoAdapter } from './game/socket-io.adapter';
 
 /**
  * Global HTTP setup, shared by main.ts and the e2e tests so both run the exact same app.
@@ -22,6 +23,11 @@ export function configureApp(app: INestApplication): void {
     origin: config.get('WEB_ORIGIN', { infer: true }),
     credentials: true, // allow the browser to send the auth cookie
   });
+
+  // Socket.IO (GameGateway) with the same origin lock as REST.
+  app.useWebSocketAdapter(
+    new SocketIoAdapter(app, config.get('WEB_ORIGIN', { infer: true })),
+  );
 
   app.useGlobalPipes(buildValidationPipe());
   app.useGlobalInterceptors(new ResponseInterceptor());
