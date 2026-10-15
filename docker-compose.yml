@@ -1,3 +1,6 @@
+# Everything with one command:  docker compose up --build
+#   web  http://localhost:3000     api  http://localhost:4000/api/v1/health
+# Only `db` is needed for local development (npm run db:up).
 services:
   db:
     image: postgres:16-alpine
@@ -15,6 +18,46 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      API_PORT: 4000
+      DATABASE_URL: postgres://${POSTGRES_USER:-chess}:${POSTGRES_PASSWORD:-chess}@db:5432/${POSTGRES_DB:-chess}
+      # Demo default only. Set a real secret in .env for anything else.
+      JWT_SECRET: ${JWT_SECRET:-docker-demo-secret-change-me-0123456789abcdef}
+      JWT_TTL_SECONDS: ${JWT_TTL_SECONDS:-28800}
+      WEB_ORIGIN: http://localhost:${WEB_PORT:-3000}
+      COOKIE_SECURE: "false" # the demo runs on plain http
+      SEED_ON_START: "true"
+    ports:
+      - "${API_PORT:-4000}:4000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4000/api/v1/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        API_INTERNAL_URL: http://api:4000
+        NEXT_PUBLIC_SOCKET_URL: http://localhost:${API_PORT:-4000}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-3000}:3000"
 
 volumes:
   pgdata:

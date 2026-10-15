@@ -1,9 +1,11 @@
 import 'reflect-metadata'; // decorators below need it, even outside the Nest runtime (e.g. unit tests)
 import { plainToInstance } from 'class-transformer';
 import {
+  IsBooleanString,
   IsEnum,
   IsInt,
   IsNotEmpty,
+  IsOptional,
   IsString,
   Max,
   Min,
@@ -46,6 +48,15 @@ export class EnvironmentVariables {
   @IsString()
   @IsNotEmpty()
   WEB_ORIGIN: string = 'http://localhost:3000';
+
+  /**
+   * Force the cookie's Secure flag on/off. Unset = on in production. A production
+   * build served over plain http (the Docker demo) sets it to false, because some
+   * browsers (Safari) refuse Secure cookies on http even for localhost.
+   */
+  @IsOptional()
+  @IsBooleanString()
+  COOKIE_SECURE?: string;
 }
 
 export function validateEnv(

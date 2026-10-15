@@ -18,7 +18,9 @@ export class AuthController {
   private cookieOptions() {
     return authCookieOptions(
       this.config.get('JWT_TTL_SECONDS', { infer: true }),
-      this.config.get('NODE_ENV', { infer: true }) === NodeEnv.Production,
+      this.config.get('COOKIE_SECURE', { infer: true }) !== undefined
+        ? this.config.get('COOKIE_SECURE', { infer: true }) === 'true'
+        : this.config.get('NODE_ENV', { infer: true }) === NodeEnv.Production,
     );
   }
 
