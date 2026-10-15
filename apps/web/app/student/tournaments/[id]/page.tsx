@@ -7,9 +7,10 @@ import { ActiveMatchBanner } from "@/components/active-match-banner";
 import { FindOpponentCard } from "@/components/matchmaking/find-opponent-card";
 import { JoinButton } from "@/components/tournaments/join-button";
 import { StatusBadge } from "@/components/tournaments/status-badge";
+import { LeaderboardCard, WinnerBanner } from "@/components/tournaments/leaderboard-card";
 import {
   BackLink,
-  LeaderboardPlaceholder,
+  LiveTournament,
   ParticipantsCard,
   TournamentFacts,
   TournamentLoader,
@@ -27,7 +28,9 @@ export default function StudentTournamentPage() {
     <TournamentLoader id={id} back={<BackLink href="/student" label="Tournaments" />}>
       {(t) => (
         <>
+          <LiveTournament id={t.id} />
           <ActiveMatchBanner />
+          <WinnerBanner tournamentId={t.id} />
           <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
             <div className="space-y-2">
               <StatusBadge status={t.status} />
@@ -43,7 +46,7 @@ export default function StudentTournamentPage() {
 
           <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_2fr]">
             <ParticipantsCard tournament={t} meId={me?.id} />
-            <LeaderboardPlaceholder />
+            <LeaderboardCard tournamentId={t.id} meId={me?.id} />
           </div>
         </>
       )}

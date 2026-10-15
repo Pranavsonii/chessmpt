@@ -12,7 +12,8 @@ import type { Namespace, Socket } from 'socket.io';
 import { AuthService } from '../auth/auth.service';
 import type { AuthUser } from '../auth/auth.types';
 import { buildValidationPipe } from '../common/pipes/validation.pipe';
-import { MatchIdDto, MoveDto } from './dto/match.dto';
+import { TournamentsService } from '../tournaments/tournaments.service';
+import { MatchIdDto, MoveDto, TournamentIdDto } from './dto/match.dto';
 import { GameBroadcaster } from './game.broadcaster';
 import { MatchEngine } from './match-engine.service';
 import { rooms } from './rooms';
@@ -50,6 +51,7 @@ export class GameGateway
     private readonly auth: AuthService,
     private readonly engine: MatchEngine,
     private readonly broadcaster: GameBroadcaster,
+    private readonly tournaments: TournamentsService,
   ) {}
 
   /**
@@ -99,6 +101,29 @@ export class GameGateway
     );
     await socket.join(rooms.match(dto.matchId));
     return ok(snapshot);
+  }
+
+  /**
+   * Follow a tournament page live (leaderboard, results, status). Same visibility
+   * as REST: findOne throws for a draft a student can't see.
+   */
+  @SubscribeMessage('tournament:watch')
+  async watchTournament(
+    @ConnectedSocket() socket: GameSocket,
+    @MessageBody() dto: TournamentIdDto,
+  ) {
+    await this.tournaments.findOne(socket.data.user, dto.tournamentId);
+    await socket.join(rooms.tournament(dto.tournamentId));
+    return ok({ tournamentId: dto.tournamentId });
+  }
+
+  @SubscribeMessage('tournament:unwatch')
+  async unwatchTournament(
+    @ConnectedSocket() socket: GameSocket,
+    @MessageBody() dto: TournamentIdDto,
+  ) {
+    await socket.leave(rooms.tournament(dto.tournamentId));
+    return ok({ tournamentId: dto.tournamentId });
   }
 
   /** Unsubscribe; harmless if you weren't in the room. */

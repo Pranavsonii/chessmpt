@@ -13,6 +13,8 @@ export const queryKeys = {
       ["tournaments", "list", statuses?.join(",") ?? "all"] as const,
     detail: (id: string) => ["tournaments", "detail", id] as const,
     participants: (id: string) => ["tournaments", "detail", id, "participants"] as const,
+    leaderboard: (id: string) => ["tournaments", "detail", id, "leaderboard"] as const,
+    matches: (id: string) => ["tournaments", "detail", id, "matches"] as const,
   },
   player: {
     all: ["player"] as const,

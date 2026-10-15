@@ -9,12 +9,23 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { isUniqueViolation } from '../common/db-errors';
 import { Events, type TournamentStatusChangedEvent } from '../common/events';
 import { checkCanJoin, type JoinDecision } from './domain/join-rules';
-import { and, asc, count, eq, inArray, SQL, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  SQL,
+  sql,
+} from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { AuthUser } from '../auth/auth.types';
 import { DB, type Database } from '../db/client';
 import {
   matches,
+  moves,
   tournamentParticipants,
   tournaments,
   users,
@@ -29,14 +40,21 @@ import {
   isVisibleToStudents,
   MIN_PLAYERS_TO_START,
 } from './domain/status-machine';
+import {
+  computeStandings,
+  type StandingRow,
+  winnersOf,
+} from './domain/standings';
 import { parseTimeControl } from './domain/time-control';
 import type {
   CreateTournamentDto,
   UpdateTournamentDto,
 } from './dto/tournament.dto';
 import {
+  type LeaderboardView,
   toTournamentView,
   type ParticipantView,
+  type TournamentMatchView,
   type TournamentView,
 } from './tournament.view';
 
@@ -170,6 +188,93 @@ export class TournamentsService {
       .where(eq(tournamentParticipants.tournamentId, id))
       .orderBy(asc(tournamentParticipants.joinedAt));
     return rows.map((r) => ({ ...r, joinedAt: r.joinedAt.toISOString() }));
+  }
+
+  // ------------------------------------------------------------- standings & results
+
+  /**
+   * GET /tournaments/:id/leaderboard. Recomputed from match results on every read
+   * (cheap at classroom size, and it can never drift from the games).
+   */
+  async leaderboard(user: AuthUser, id: string): Promise<LeaderboardView> {
+    const t = await this.findOne(user, id); // same visibility rules
+    const rows = await this.standings(id);
+    const final = t.status === 'completed';
+    return {
+      tournamentId: id,
+      final,
+      rows,
+      winners: final
+        ? winnersOf(rows).map((r) => ({ id: r.userId, name: r.name }))
+        : [],
+    };
+  }
+
+  /** GET /tournaments/:id/matches (coach): every game with its result, for the stats page. */
+  async results(id: string): Promise<TournamentMatchView[]> {
+    await this.getRow(id);
+    const white = alias(users, 'white');
+    const black = alias(users, 'black');
+    const moveCount = sql<number>`(
+      select count(*)::int from ${moves} where ${moves.matchId} = ${matches.id}
+    )`;
+    const rows = await this.db
+      .select({
+        m: matches,
+        whiteName: white.name,
+        blackName: black.name,
+        moveCount,
+      })
+      .from(matches)
+      .innerJoin(white, eq(white.id, matches.whiteId))
+      .innerJoin(black, eq(black.id, matches.blackId))
+      .where(eq(matches.tournamentId, id))
+      .orderBy(desc(matches.startedAt));
+
+    return rows.map(({ m, whiteName, blackName, moveCount: plies }) => ({
+      id: m.id,
+      white: { id: m.whiteId, name: whiteName },
+      black: { id: m.blackId, name: blackName },
+      status: m.status,
+      result: m.result,
+      termination: m.termination,
+      plies,
+      startedAt: m.startedAt.toISOString(),
+      endedAt: m.endedAt?.toISOString() ?? null,
+      durationMs: m.endedAt
+        ? m.endedAt.getTime() - m.startedAt.getTime()
+        : null,
+      pgn: m.status === 'active' ? null : m.pgn, // a live game's PGN is on the board
+    }));
+  }
+
+  /** Participants + completed results -> ranked rows. Aborted games never count. */
+  private async standings(id: string): Promise<StandingRow[]> {
+    const [players, games] = await Promise.all([
+      this.db
+        .select({ id: users.id, name: users.name })
+        .from(tournamentParticipants)
+        .innerJoin(users, eq(users.id, tournamentParticipants.userId))
+        .where(eq(tournamentParticipants.tournamentId, id)),
+      this.db
+        .select({
+          whiteId: matches.whiteId,
+          blackId: matches.blackId,
+          result: matches.result,
+        })
+        .from(matches)
+        .where(
+          and(
+            eq(matches.tournamentId, id),
+            eq(matches.status, 'completed'),
+            isNotNull(matches.result),
+          ),
+        ),
+    ]);
+    return computeStandings(
+      players,
+      games.map((g) => ({ ...g, result: g.result! })),
+    );
   }
 
   // ------------------------------------------------------------- join (student)
@@ -307,6 +412,9 @@ export class TournamentsService {
       }
     }
 
+    // Declared on completion: the single rank-1 player, or null when first place is
+    // shared (the leaderboard then lists the co-winners).
+    let winnerId: string | null | undefined;
     if (to === 'completed') {
       const [{ n }] = await this.db
         .select({ n: count() })
@@ -318,15 +426,17 @@ export class TournamentsService {
           message: `${n} game(s) are still being played. Complete the tournament when they finish.`,
         });
       }
-      // Phase 10: compute standings here and store winner_id.
+      const winners = winnersOf(await this.standings(id));
+      winnerId = winners.length === 1 ? winners[0].userId : null;
     }
 
     // Optimistic concurrency: only update if the status is still what we checked.
     // If another request changed it in the meantime, 0 rows match and we report a conflict
     // instead of silently applying a transition that was validated against stale data.
+    // The winner is written in the same statement, so status and winner never disagree.
     const updated = await this.db
       .update(tournaments)
-      .set({ status: to })
+      .set({ status: to, ...(winnerId !== undefined && { winnerId }) })
       .where(and(eq(tournaments.id, id), eq(tournaments.status, from)))
       .returning({ id: tournaments.id });
     if (updated.length === 0) {

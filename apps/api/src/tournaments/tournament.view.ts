@@ -1,4 +1,11 @@
-import type { Tournament, TournamentStatus } from '../db/schema';
+import type {
+  Match,
+  MatchResult,
+  MatchTermination,
+  Tournament,
+  TournamentStatus,
+} from '../db/schema';
+import type { StandingRow } from './domain/standings';
 import { formatTimeControl } from './domain/time-control';
 
 /** What the API returns for a tournament. */
@@ -22,6 +29,34 @@ export interface ParticipantView {
   id: string;
   name: string;
   joinedAt: string;
+}
+
+/**
+ * GET /tournaments/:id/leaderboard. Points are in half-points and Sonneborn-Berger
+ * in quarter-points (integers, exact); the client divides for display.
+ */
+export interface LeaderboardView {
+  tournamentId: string;
+  /** True once the tournament is completed: the order is final. */
+  final: boolean;
+  rows: StandingRow[];
+  /** Rank-1 players once final: one winner, or co-winners on a shared first place. */
+  winners: { id: string; name: string }[];
+}
+
+/** One game in GET /tournaments/:id/matches (coach stats). */
+export interface TournamentMatchView {
+  id: string;
+  white: { id: string; name: string };
+  black: { id: string; name: string };
+  status: Match['status'];
+  result: MatchResult | null;
+  termination: MatchTermination | null;
+  plies: number;
+  startedAt: string;
+  endedAt: string | null;
+  durationMs: number | null;
+  pgn: string | null;
 }
 
 export function toTournamentView(

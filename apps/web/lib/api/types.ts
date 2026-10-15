@@ -106,6 +106,42 @@ export interface MatchHistoryItem {
   endedAt: string | null;
 }
 
+// ---------------------------------------------------------------- standings
+
+/** Points are in HALF-points and SB in QUARTER-points (exact integers); see lib/standings.ts. */
+export interface StandingRow {
+  rank: number;
+  userId: string;
+  name: string;
+  played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  halfPoints: number;
+  sbQuarters: number;
+}
+
+export interface Leaderboard {
+  tournamentId: string;
+  final: boolean;
+  rows: StandingRow[];
+  winners: PlayerRef[];
+}
+
+export interface TournamentMatch {
+  id: string;
+  white: PlayerRef;
+  black: PlayerRef;
+  status: "active" | "completed" | "aborted";
+  result: MatchResult | null;
+  termination: MatchTermination | null;
+  plies: number;
+  startedAt: string;
+  endedAt: string | null;
+  durationMs: number | null;
+  pgn: string | null;
+}
+
 // ---------------------------------------------------------------- matchmaking
 
 export type QueueStatus =
