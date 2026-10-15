@@ -5,7 +5,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { isUniqueViolation } from '../common/db-errors';
+import { Events, type TournamentStatusChangedEvent } from '../common/events';
 import { checkCanJoin, type JoinDecision } from './domain/join-rules';
 import { and, asc, count, eq, inArray, SQL, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
@@ -53,7 +55,10 @@ function httpErrorFor(d: Extract<JoinDecision, { ok: false }>) {
 
 @Injectable()
 export class TournamentsService {
-  constructor(@Inject(DB) private readonly db: Database) {}
+  constructor(
+    @Inject(DB) private readonly db: Database,
+    private readonly events: EventEmitter2,
+  ) {}
 
   // ------------------------------------------------------------- reads
 
@@ -331,6 +336,9 @@ export class TournamentsService {
           'The tournament status was changed by someone else. Refresh and try again.',
       });
     }
+
+    const event: TournamentStatusChangedEvent = { tournamentId: id, from, to };
+    this.events.emit(Events.TournamentStatusChanged, event);
     return this.findOneById(id);
   }
 
