@@ -14,15 +14,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { isApiError } from "@/lib/api/client";
 import type { Tournament, TournamentStatus } from "@/lib/api/types";
+import { notifyError } from "@/lib/notify";
 import {
   useChangeTournamentStatus,
   useDeleteTournament,
 } from "@/lib/tournaments";
 import { TournamentFormDialog } from "./tournament-form-dialog";
-
-const errorMessage = (e: unknown) => (isApiError(e) ? e.message : "Something went wrong.");
 
 /** The single next step in the lifecycle, with what it means for students. */
 const NEXT_STEP: Partial<
@@ -75,7 +73,7 @@ export function CoachActions({ tournament }: { tournament: Tournament }) {
         setConfirm(null);
       },
       onError: (e) => {
-        toast.error(errorMessage(e));
+        notifyError(e, "Couldn't update the tournament");
         setConfirm(null);
       },
     });
@@ -88,7 +86,7 @@ export function CoachActions({ tournament }: { tournament: Tournament }) {
         router.replace("/coach");
       },
       onError: (e) => {
-        toast.error(errorMessage(e));
+        notifyError(e, "Couldn't update the tournament");
         setConfirm(null);
       },
     });

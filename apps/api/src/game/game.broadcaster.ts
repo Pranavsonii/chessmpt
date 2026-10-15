@@ -25,4 +25,11 @@ export class GameBroadcaster {
   toUser(userId: string, event: string, payload: unknown): void {
     this.server?.to(rooms.user(userId)).emit(event, payload);
   }
+
+  /** Does the user still have at least one connected socket (any tab)? */
+  async isOnline(userId: string): Promise<boolean> {
+    if (!this.server) return false;
+    const sockets = await this.server.in(rooms.user(userId)).fetchSockets();
+    return sockets.length > 0;
+  }
 }

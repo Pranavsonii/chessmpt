@@ -12,6 +12,7 @@ import type { Namespace, Socket } from 'socket.io';
 import { AuthService } from '../auth/auth.service';
 import type { AuthUser } from '../auth/auth.types';
 import { buildValidationPipe } from '../common/pipes/validation.pipe';
+import { MatchmakingService } from '../matchmaking/matchmaking.service';
 import { TournamentsService } from '../tournaments/tournaments.service';
 import { MatchIdDto, MoveDto, TournamentIdDto } from './dto/match.dto';
 import { GameBroadcaster } from './game.broadcaster';
@@ -24,7 +25,12 @@ import { WsExceptionFilter } from './ws-exception.filter';
 /** What the handshake middleware stores on every accepted socket. */
 interface SocketData {
   user: AuthUser;
+  /** Epoch ms when the session's JWT expires. */
+  expiresAt: number;
 }
+
+/** How long a student may be fully disconnected before leaving the matchmaking queue. */
+const QUEUE_DISCONNECT_GRACE_MS = 10_000;
 // Socket<listen events, emit events, server-side events, socket.data>
 export type GameSocket = Socket<any, any, any, SocketData>;
 
@@ -52,6 +58,7 @@ export class GameGateway
     private readonly engine: MatchEngine,
     private readonly broadcaster: GameBroadcaster,
     private readonly tournaments: TournamentsService,
+    private readonly matchmaking: MatchmakingService,
   ) {}
 
   /**
@@ -63,26 +70,47 @@ export class GameGateway
     this.broadcaster.bind(server);
     server.use((socket: GameSocket, next) => {
       const token = tokenFromCookieHeader(socket.handshake.headers.cookie);
-      const user = token ? this.auth.verifyToken(token) : null;
-      if (!user) {
+      const session = token ? this.auth.verifySession(token) : null;
+      if (!session) {
         const err = new Error('UNAUTHORIZED') as Error & { data?: unknown };
         err.data = { code: 'UNAUTHORIZED', message: 'Please log in' };
         return next(err);
       }
-      socket.data.user = user;
+      socket.data.user = session.user;
+      socket.data.expiresAt = session.expiresAt;
       next();
     });
   }
 
   /** Every socket joins its user's private room, so the server can reach all their tabs. */
   async handleConnection(socket: GameSocket): Promise<void> {
-    const { user } = socket.data;
+    const { user, expiresAt } = socket.data;
+    // A socket must not outlive its session: disconnect when the JWT expires.
+    // (setTimeout caps at ~24.8 days; JWT_TTL_SECONDS is hours.)
+    const timer = setTimeout(
+      () => socket.disconnect(true),
+      Math.max(0, expiresAt - Date.now()),
+    );
+    socket.once('disconnect', () => clearTimeout(timer));
+
     await socket.join(rooms.user(user.id));
     this.logger.debug(`connected ${socket.id} (user ${user.id})`);
   }
 
+  /**
+   * When a student's LAST socket goes away (tab closed, network gone), take them
+   * out of matchmaking, so nobody gets paired with an empty chair. A short grace
+   * period lets a page reload or a network blip reconnect first.
+   */
   handleDisconnect(socket: GameSocket): void {
+    const { user } = socket.data;
     this.logger.debug(`disconnected ${socket.id}`);
+    if (!user || user.role !== 'student') return;
+    setTimeout(() => {
+      void this.broadcaster.isOnline(user.id).then((online) => {
+        if (!online) this.matchmaking.leaveAll(user.id);
+      });
+    }, QUEUE_DISCONNECT_GRACE_MS).unref();
   }
 
   /**

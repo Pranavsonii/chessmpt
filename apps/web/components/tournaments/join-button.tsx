@@ -4,9 +4,9 @@ import { Check, Loader2, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { isApiError } from "@/lib/api/client";
 import type { Tournament } from "@/lib/api/types";
 import { useJoinTournament } from "@/lib/tournaments";
+import { notifyError } from "@/lib/notify";
 
 /** Join button for students; turns into a "Joined" badge once in. */
 export function JoinButton({
@@ -35,7 +35,7 @@ export function JoinButton({
         join.mutate(undefined, {
           onSuccess: (t) => toast.success(`You're in! Welcome to ${t.name}.`),
           onError: (err) =>
-            toast.error(isApiError(err) ? err.message : "Couldn't join. Please try again."),
+            notifyError(err, "Couldn't join"),
         });
       }}
     >

@@ -5,6 +5,7 @@ import {
   IsInt,
   IsNotEmpty,
   IsString,
+  IsUrl,
   Max,
   Min,
   MinLength,
@@ -43,10 +44,21 @@ export class EnvironmentVariables {
   @Min(60)
   JWT_TTL_SECONDS: number = 8 * 60 * 60;
 
-  @IsString()
-  @IsNotEmpty()
+  /** Exact browser origin (scheme + host + port, no path): CORS and the socket Origin check compare against it. */
+  @IsUrl(
+    {
+      require_tld: false,
+      require_protocol: true,
+      protocols: ['http', 'https'],
+    },
+    { message: 'WEB_ORIGIN must be an origin like http://localhost:3000' },
+  )
   WEB_ORIGIN: string = 'http://localhost:3000';
 }
+
+/** The value shipped in .env.example. Long enough to pass @MinLength, so check it explicitly. */
+export const EXAMPLE_JWT_SECRET =
+  'change-me-to-a-long-random-string-at-least-32-chars';
 
 export function validateEnv(
   config: Record<string, unknown>,
@@ -55,11 +67,23 @@ export function validateEnv(
     enableImplicitConversion: true, // "4000" -> 4000
   });
   const errors = validateSync(env, { skipMissingProperties: false });
-  if (errors.length > 0) {
-    const messages = errors
-      .flatMap((e) => Object.values(e.constraints ?? {}))
-      .join('\n  - ');
-    throw new Error(`Invalid environment configuration:\n  - ${messages}`);
+  const messages = errors.flatMap((e) => Object.values(e.constraints ?? {}));
+
+  // Anyone who has read the repo knows the example secret, and with it can forge a
+  // coach token. Refuse to start a production server with it.
+  if (
+    env.NODE_ENV === NodeEnv.Production &&
+    env.JWT_SECRET === EXAMPLE_JWT_SECRET
+  ) {
+    messages.push(
+      'JWT_SECRET is still the example value from .env.example; generate a real one',
+    );
+  }
+
+  if (messages.length > 0) {
+    throw new Error(
+      `Invalid environment configuration:\n  - ${messages.join('\n  - ')}`,
+    );
   }
   return env;
 }

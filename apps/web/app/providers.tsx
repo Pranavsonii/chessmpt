@@ -26,7 +26,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       {children}
-      <Toaster theme="light" richColors position="top-right" />
+      {/* richColors: success / error / warning each get their own colour and icon.
+          closeButton: every toast can be dismissed. offset clears the sticky header. */}
+      <Toaster theme="light" richColors closeButton position="top-right" offset={72} visibleToasts={4} />
     </QueryClientProvider>
   );
 }
