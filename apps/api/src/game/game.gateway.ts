@@ -7,14 +7,14 @@ import {
   OnGatewayInit,
   SubscribeMessage,
   WebSocketGateway,
-  WebSocketServer,
 } from '@nestjs/websockets';
 import type { Namespace, Socket } from 'socket.io';
 import { AuthService } from '../auth/auth.service';
 import type { AuthUser } from '../auth/auth.types';
 import { buildValidationPipe } from '../common/pipes/validation.pipe';
-import { MatchJoinDto } from './dto/match-join.dto';
-import { GameService } from './game.service';
+import { MatchIdDto, MoveDto } from './dto/match.dto';
+import { GameBroadcaster } from './game.broadcaster';
+import { MatchEngine } from './match-engine.service';
 import { rooms } from './rooms';
 import { tokenFromCookieHeader } from './socket-auth';
 import { ok } from './ws-ack';
@@ -34,6 +34,9 @@ export type GameSocket = Socket<any, any, any, SocketData>;
  *
  * Global pipes/filters from app.setup.ts only cover HTTP, so validation and the
  * ack-shaped error handling are attached here explicitly.
+ *
+ * Handlers stay thin: authenticate (done at handshake), validate (pipe), delegate
+ * to MatchEngine, ack. Errors thrown by the engine become { ok: false } acks.
  */
 @WebSocketGateway({ namespace: '/game' })
 @UsePipes(buildValidationPipe())
@@ -43,12 +46,10 @@ export class GameGateway
 {
   private readonly logger = new Logger(GameGateway.name);
 
-  @WebSocketServer()
-  private readonly server: Namespace;
-
   constructor(
     private readonly auth: AuthService,
-    private readonly game: GameService,
+    private readonly engine: MatchEngine,
+    private readonly broadcaster: GameBroadcaster,
   ) {}
 
   /**
@@ -57,6 +58,7 @@ export class GameGateway
    * any handler can run, so every event below already knows socket.data.user.
    */
   afterInit(server: Namespace): void {
+    this.broadcaster.bind(server);
     server.use((socket: GameSocket, next) => {
       const token = tokenFromCookieHeader(socket.handshake.headers.cookie);
       const user = token ? this.auth.verifyToken(token) : null;
@@ -81,27 +83,50 @@ export class GameGateway
     this.logger.debug(`disconnected ${socket.id}`);
   }
 
-  /** Subscribe to a match's live events. The server checks you play in it; clients never pick rooms. */
+  /**
+   * Subscribe to a match and get a full snapshot. Clients call this on page load
+   * and again on every reconnect, which is all reconnection needs.
+   * The server checks you play in it; clients never pick rooms.
+   */
   @SubscribeMessage('match:join')
   async joinMatch(
     @ConnectedSocket() socket: GameSocket,
-    @MessageBody() dto: MatchJoinDto,
+    @MessageBody() dto: MatchIdDto,
   ) {
-    const match = await this.game.getMatchForParticipant(
+    const snapshot = await this.engine.snapshotFor(
       dto.matchId,
       socket.data.user,
     );
-    await socket.join(rooms.match(match.id));
-    return ok({ matchId: match.id });
+    await socket.join(rooms.match(dto.matchId));
+    return ok(snapshot);
   }
 
   /** Unsubscribe; harmless if you weren't in the room. */
   @SubscribeMessage('match:leave')
   async leaveMatch(
     @ConnectedSocket() socket: GameSocket,
-    @MessageBody() dto: MatchJoinDto,
+    @MessageBody() dto: MatchIdDto,
   ) {
     await socket.leave(rooms.match(dto.matchId));
+    return ok({ matchId: dto.matchId });
+  }
+
+  /** The new position reaches both players via the match:moved broadcast; the ack just confirms. */
+  @SubscribeMessage('match:move')
+  async move(
+    @ConnectedSocket() socket: GameSocket,
+    @MessageBody() dto: MoveDto,
+  ) {
+    const { matchId, ...move } = dto;
+    return ok(await this.engine.move(matchId, socket.data.user, move));
+  }
+
+  @SubscribeMessage('match:resign')
+  async resign(
+    @ConnectedSocket() socket: GameSocket,
+    @MessageBody() dto: MatchIdDto,
+  ) {
+    await this.engine.resign(dto.matchId, socket.data.user);
     return ok({ matchId: dto.matchId });
   }
 }

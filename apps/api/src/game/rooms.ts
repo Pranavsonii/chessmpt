@@ -7,4 +7,6 @@ export const rooms = {
   user: (userId: string) => `user:${userId}`,
   /** The two players of a match. */
   match: (matchId: string) => `match:${matchId}`,
+  /** Everyone watching a tournament page (leaderboard updates, Phase 10). */
+  tournament: (tournamentId: string) => `tournament:${tournamentId}`,
 };
