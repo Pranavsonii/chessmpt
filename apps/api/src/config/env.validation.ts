@@ -38,9 +38,10 @@ export class EnvironmentVariables {
   @MinLength(32, { message: 'JWT_SECRET must be at least 32 characters' })
   JWT_SECRET: string;
 
-  @IsString()
-  @IsNotEmpty()
-  JWT_EXPIRES_IN: string = '8h';
+  /** Lifetime of the JWT and of the cookie that carries it (default 8 hours). */
+  @IsInt()
+  @Min(60)
+  JWT_TTL_SECONDS: number = 8 * 60 * 60;
 
   @IsString()
   @IsNotEmpty()

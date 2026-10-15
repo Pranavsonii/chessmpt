@@ -12,6 +12,7 @@ import { IsInt, IsString, Min, MinLength } from 'class-validator';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
+import { Public } from '../src/auth/decorators';
 import { configureApp } from '../src/app.setup';
 import { ApiFailure, withMeta } from '../src/common/api-response';
 import { FieldError } from '../src/common/pipes/validation.pipe';
@@ -27,6 +28,7 @@ class EchoDto {
   count: number;
 }
 
+@Public() // these routes test the envelope, not auth
 @Controller('e2e')
 class E2eController {
   @Post('echo')

@@ -10,7 +10,7 @@ describe('validateEnv', () => {
     const env = validateEnv({ ...valid, API_PORT: '5000' });
     expect(env.API_PORT).toBe(5000);
     expect(env.NODE_ENV).toBe('development');
-    expect(env.JWT_EXPIRES_IN).toBe('8h');
+    expect(env.JWT_TTL_SECONDS).toBe(28800);
   });
 
   it('fails fast when a required variable is missing', () => {
