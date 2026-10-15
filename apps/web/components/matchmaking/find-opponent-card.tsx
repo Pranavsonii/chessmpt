@@ -8,9 +8,10 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { isApiError } from "@/lib/api/client";
-import type { Tournament } from "@/lib/api/types";
+import type { QueueStatus, Tournament } from "@/lib/api/types";
 import { useCancelSearch, useFindOpponent, useQueueStatus } from "@/lib/matchmaking";
 import { queryKeys } from "@/lib/query-keys";
+import { useSocket } from "@/lib/socket";
 
 /**
  * "Find opponent" for a joined student in an ongoing tournament.
@@ -22,9 +23,28 @@ export function FindOpponentCard({ tournament }: { tournament: Tournament }) {
   const status = useQueueStatus(tournament.id, true);
   const find = useFindOpponent(tournament.id);
   const cancel = useCancelSearch(tournament.id);
+  const { socket } = useSocket();
   const current = status.data;
 
-  // Matched (from the POST response, a poll, or later the socket push): go play.
+  // The socket push is the fast path; polling while searching stays as the fallback.
+  useEffect(() => {
+    if (!socket) return;
+    const onFound = (e: { matchId: string; tournamentId: string }) => {
+      if (e.tournamentId !== tournament.id) return;
+      const matched: QueueStatus = {
+        state: "matched",
+        tournamentId: e.tournamentId,
+        matchId: e.matchId,
+      };
+      qc.setQueryData(queryKeys.player.queue(tournament.id), matched);
+    };
+    socket.on("match:found", onFound);
+    return () => {
+      socket.off("match:found", onFound);
+    };
+  }, [socket, qc, tournament.id]);
+
+  // Matched (from the POST response, a poll, or the socket push): go play.
   const matchId = current?.state === "matched" ? current.matchId : null;
   useEffect(() => {
     if (!matchId) return;
