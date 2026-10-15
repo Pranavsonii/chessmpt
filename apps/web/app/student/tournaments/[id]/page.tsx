@@ -1,9 +1,10 @@
 "use client";
 
-import { Hourglass, Lock, Swords, Trophy } from "lucide-react";
+import { Hourglass, Lock, Trophy } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ActiveMatchBanner } from "@/components/active-match-banner";
+import { FindOpponentCard } from "@/components/matchmaking/find-opponent-card";
 import { JoinButton } from "@/components/tournaments/join-button";
 import { StatusBadge } from "@/components/tournaments/status-badge";
 import {
@@ -52,6 +53,8 @@ export default function StudentTournamentPage() {
 
 /** What the student can do next in this tournament, depending on status and membership. */
 function PlayCard({ tournament: t }: { tournament: Tournament }) {
+  if (t.isJoined && t.status === "ongoing") return <FindOpponentCard tournament={t} />;
+
   const state = !t.isJoined
     ? t.status === "open"
       ? null // the Join button in the header is the call to action
@@ -69,9 +72,7 @@ function PlayCard({ tournament: t }: { tournament: Tournament }) {
           title: "You're registered",
           text: "Matchmaking opens when your coach starts the tournament.",
         }
-      : t.status === "ongoing"
-        ? { icon: Swords, title: "Ready to play?", text: "Find an opponent and play a live game." }
-        : { icon: Trophy, title: "Tournament finished", text: "See the final standings below." };
+      : { icon: Trophy, title: "Tournament finished", text: "See the final standings below." };
 
   if (!state) return null;
   const Icon = state.icon;
@@ -84,12 +85,6 @@ function PlayCard({ tournament: t }: { tournament: Tournament }) {
           <p className="font-semibold">{state.title}</p>
           <p className="text-sm text-muted-foreground">{state.text}</p>
         </div>
-        {t.isJoined && t.status === "ongoing" && (
-          // Wired to the matchmaking queue in Phase 8.
-          <Button disabled title="Matchmaking isn't available yet">
-            <Swords /> Find opponent
-          </Button>
-        )}
         {t.isJoined && t.status === "completed" && (
           <Button variant="outline" asChild>
             <Link href="/student/history">My games</Link>
