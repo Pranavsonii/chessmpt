@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { Brand } from "@/components/brand";
+import { SocketStatusBadge } from "@/components/socket-status";
 import { ErrorState } from "@/components/states";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +22,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { Role } from "@/lib/api/types";
 import { useLogout, useMe } from "@/lib/auth";
 import { homeFor } from "@/lib/session";
+import { SocketProvider } from "@/lib/socket";
 import { cn } from "@/lib/utils";
 
 export interface NavItem {
@@ -36,19 +38,26 @@ const initials = (name: string) =>
     .slice(0, 2)
     .toUpperCase();
 
-/**
- * Layout for the logged-in areas. Loads /me, and if the role doesn't match this
- * area (proxy.ts normally prevents that) sends the user to their own home.
- */
-export function AppShell({
-  role,
-  nav,
-  children,
-}: {
+interface AppShellProps {
   role: Role;
   nav: NavItem[];
   children: React.ReactNode;
-}) {
+}
+
+/**
+ * Layout for the logged-in areas. Opens the session's real-time socket, loads /me,
+ * and if the role doesn't match this area (proxy.ts normally prevents that) sends
+ * the user to their own home.
+ */
+export function AppShell(props: AppShellProps) {
+  return (
+    <SocketProvider>
+      <Shell {...props} />
+    </SocketProvider>
+  );
+}
+
+function Shell({ role, nav, children }: AppShellProps) {
   const me = useMe();
   const logout = useLogout();
   const router = useRouter();
@@ -84,7 +93,8 @@ export function AppShell({
             })}
           </nav>
 
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-3">
+            {me.data && <SocketStatusBadge />}
             {me.isPending ? (
               <Skeleton className="size-9 rounded-full" />
             ) : me.data ? (
