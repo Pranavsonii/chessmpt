@@ -33,3 +33,33 @@ export interface FieldError {
   field: string;
   errors: string[];
 }
+
+// ---------------------------------------------------------------- tournaments
+
+export type TournamentStatus = "draft" | "open" | "ongoing" | "completed";
+
+export interface Tournament {
+  id: string;
+  name: string;
+  timeControl: string; // "5+0"
+  initialSeconds: number;
+  incrementSeconds: number;
+  startsAt: string; // ISO, UTC
+  status: TournamentStatus;
+  participantCount: number;
+  winner: { id: string; name: string } | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Participant {
+  id: string;
+  name: string;
+  joinedAt: string;
+}
+
+export interface TournamentInput {
+  name: string;
+  timeControl: string;
+  startsAt: string; // ISO with offset
+}
