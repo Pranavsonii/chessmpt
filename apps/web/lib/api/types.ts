@@ -60,6 +60,43 @@ export interface Participant {
   joinedAt: string;
 }
 
+// ---------------------------------------------------------------- results
+
+/** One leaderboard line. Integers only: halfPoints ÷ 2, sbQuarters ÷ 4 for display. */
+export interface StandingRow {
+  rank: number;
+  userId: string;
+  name: string;
+  played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  halfPoints: number;
+  sbQuarters: number;
+}
+
+export interface Leaderboard {
+  tournamentId: string;
+  status: TournamentStatus;
+  /** Completed: standings can no longer change. */
+  final: boolean;
+  rows: StandingRow[];
+  /** Rank-1 players once final; more than one means co-winners. */
+  winners: PlayerRef[];
+}
+
+export interface TournamentMatch {
+  id: string;
+  white: PlayerRef;
+  black: PlayerRef;
+  status: "active" | "completed" | "aborted";
+  result: MatchResult | null;
+  termination: MatchTermination | null;
+  plies: number;
+  startedAt: string;
+  endedAt: string | null;
+}
+
 // ---------------------------------------------------------------- player (student)
 
 export type Color = "white" | "black";

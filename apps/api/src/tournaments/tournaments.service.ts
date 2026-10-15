@@ -9,12 +9,13 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { isUniqueViolation } from '../common/db-errors';
 import { Events, type TournamentStatusChangedEvent } from '../common/events';
 import { checkCanJoin, type JoinDecision } from './domain/join-rules';
-import { and, asc, count, eq, inArray, SQL, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, SQL, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { AuthUser } from '../auth/auth.types';
 import { DB, type Database } from '../db/client';
 import {
   matches,
+  moves,
   tournamentParticipants,
   tournaments,
   users,
@@ -29,14 +30,18 @@ import {
   isVisibleToStudents,
   MIN_PLAYERS_TO_START,
 } from './domain/status-machine';
+import { winnersOf } from './domain/standings';
 import { parseTimeControl } from './domain/time-control';
 import type {
   CreateTournamentDto,
   UpdateTournamentDto,
 } from './dto/tournament.dto';
+import { loadStandings } from './standings.query';
 import {
   toTournamentView,
+  type LeaderboardView,
   type ParticipantView,
+  type TournamentMatchView,
   type TournamentView,
 } from './tournament.view';
 
@@ -44,6 +49,13 @@ const NOT_FOUND = {
   code: 'TOURNAMENT_NOT_FOUND',
   message: 'Tournament not found',
 };
+
+const statusChangedConcurrently = () =>
+  new ConflictException({
+    code: 'STATUS_CHANGED_CONCURRENTLY',
+    message:
+      'The tournament status was changed by someone else. Refresh and try again.',
+  });
 
 /** Turns a refused JoinDecision into the matching HTTP exception. */
 function httpErrorFor(d: Extract<JoinDecision, { ok: false }>) {
@@ -170,6 +182,62 @@ export class TournamentsService {
       .where(eq(tournamentParticipants.tournamentId, id))
       .orderBy(asc(tournamentParticipants.joinedAt));
     return rows.map((r) => ({ ...r, joinedAt: r.joinedAt.toISOString() }));
+  }
+
+  // ------------------------------------------------------------- results
+
+  /**
+   * GET /tournaments/:id/leaderboard. Recomputed from the games on every request
+   * (always consistent, and cheap at classroom size).
+   */
+  async leaderboard(user: AuthUser, id: string): Promise<LeaderboardView> {
+    const t = await this.findOne(user, id); // same visibility rules
+    const rows = await loadStandings(this.db, id);
+    const final = t.status === 'completed';
+    return {
+      tournamentId: id,
+      status: t.status,
+      final,
+      rows,
+      winners: final
+        ? winnersOf(rows).map((r) => ({ id: r.userId, name: r.name }))
+        : [],
+    };
+  }
+
+  /** GET /tournaments/:id/matches: every game (live, finished, aborted), newest first. */
+  async matches(user: AuthUser, id: string): Promise<TournamentMatchView[]> {
+    await this.findOne(user, id);
+    const white = alias(users, 'white');
+    const black = alias(users, 'black');
+    const plies = sql<number>`(
+      select count(*)::int from ${moves} where ${moves.matchId} = ${matches.id}
+    )`;
+
+    const rows = await this.db
+      .select({
+        m: matches,
+        plies,
+        whiteName: white.name,
+        blackName: black.name,
+      })
+      .from(matches)
+      .innerJoin(white, eq(white.id, matches.whiteId))
+      .innerJoin(black, eq(black.id, matches.blackId))
+      .where(eq(matches.tournamentId, id))
+      .orderBy(desc(matches.startedAt));
+
+    return rows.map(({ m, plies, whiteName, blackName }) => ({
+      id: m.id,
+      white: { id: m.whiteId, name: whiteName },
+      black: { id: m.blackId, name: blackName },
+      status: m.status,
+      result: m.result,
+      termination: m.termination,
+      plies,
+      startedAt: m.startedAt.toISOString(),
+      endedAt: m.endedAt?.toISOString() ?? null,
+    }));
   }
 
   // ------------------------------------------------------------- join (student)
@@ -308,7 +376,44 @@ export class TournamentsService {
     }
 
     if (to === 'completed') {
-      const [{ n }] = await this.db
+      await this.complete(id, from);
+    } else {
+      // Optimistic concurrency: only update if the status is still what we checked.
+      // If another request changed it in the meantime, 0 rows match and we report a conflict
+      // instead of silently applying a transition that was validated against stale data.
+      const updated = await this.db
+        .update(tournaments)
+        .set({ status: to })
+        .where(and(eq(tournaments.id, id), eq(tournaments.status, from)))
+        .returning({ id: tournaments.id });
+      if (updated.length === 0) throw statusChangedConcurrently();
+    }
+
+    const event: TournamentStatusChangedEvent = { tournamentId: id, from, to };
+    this.events.emit(Events.TournamentStatusChanged, event);
+    return this.findOneById(id);
+  }
+
+  /**
+   * ongoing → completed: check that no game is being played, then store the status
+   * and the winner. The check and the write must not be split by a new pairing.
+   *
+   * Matchmaking holds FOR SHARE on the tournament row while it creates a match.
+   * Taking FOR UPDATE first makes this wait for a pairing already in flight (whose
+   * match the count below then sees), and makes later pairings wait for us; they
+   * then read 'completed' and give up. The optimistic WHERE alone would not be
+   * enough here, because the count happens before the UPDATE.
+   */
+  private async complete(id: string, from: TournamentStatus): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .select({ status: tournaments.status })
+        .from(tournaments)
+        .where(eq(tournaments.id, id))
+        .for('update');
+      if (row?.status !== from) throw statusChangedConcurrently();
+
+      const [{ n }] = await tx
         .select({ n: count() })
         .from(matches)
         .where(and(eq(matches.tournamentId, id), eq(matches.status, 'active')));
@@ -318,28 +423,18 @@ export class TournamentsService {
           message: `${n} game(s) are still being played. Complete the tournament when they finish.`,
         });
       }
-      // Phase 10: compute standings here and store winner_id.
-    }
 
-    // Optimistic concurrency: only update if the status is still what we checked.
-    // If another request changed it in the meantime, 0 rows match and we report a conflict
-    // instead of silently applying a transition that was validated against stale data.
-    const updated = await this.db
-      .update(tournaments)
-      .set({ status: to })
-      .where(and(eq(tournaments.id, id), eq(tournaments.status, from)))
-      .returning({ id: tournaments.id });
-    if (updated.length === 0) {
-      throw new ConflictException({
-        code: 'STATUS_CHANGED_CONCURRENTLY',
-        message:
-          'The tournament status was changed by someone else. Refresh and try again.',
-      });
-    }
-
-    const event: TournamentStatusChangedEvent = { tournamentId: id, from, to };
-    this.events.emit(Events.TournamentStatusChanged, event);
-    return this.findOneById(id);
+      // A shared first place has no single winner: winner_id stays null and the
+      // leaderboard lists the co-winners instead.
+      const winners = winnersOf(await loadStandings(tx, id));
+      await tx
+        .update(tournaments)
+        .set({
+          status: 'completed',
+          winnerId: winners.length === 1 ? winners[0].userId : null,
+        })
+        .where(eq(tournaments.id, id));
+    });
   }
 
   async remove(id: string): Promise<void> {

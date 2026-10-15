@@ -12,7 +12,9 @@ import type { Namespace, Socket } from 'socket.io';
 import { AuthService } from '../auth/auth.service';
 import type { AuthUser } from '../auth/auth.types';
 import { buildValidationPipe } from '../common/pipes/validation.pipe';
+import { TournamentsService } from '../tournaments/tournaments.service';
 import { MatchIdDto, MoveDto } from './dto/match.dto';
+import { TournamentIdDto } from './dto/tournament-watch.dto';
 import { GameBroadcaster } from './game.broadcaster';
 import { MatchEngine } from './match-engine.service';
 import { rooms } from './rooms';
@@ -50,6 +52,7 @@ export class GameGateway
     private readonly auth: AuthService,
     private readonly engine: MatchEngine,
     private readonly broadcaster: GameBroadcaster,
+    private readonly tournaments: TournamentsService,
   ) {}
 
   /**
@@ -128,5 +131,29 @@ export class GameGateway
   ) {
     await this.engine.resign(dto.matchId, socket.data.user);
     return ok({ matchId: dto.matchId });
+  }
+
+  /**
+   * Follow a tournament page: leaderboard, results, status. Anyone who may see the
+   * tournament over REST may watch it (students never see drafts); the same service
+   * check answers both, so the two rules can't drift apart.
+   */
+  @SubscribeMessage('tournament:watch')
+  async watchTournament(
+    @ConnectedSocket() socket: GameSocket,
+    @MessageBody() dto: TournamentIdDto,
+  ) {
+    await this.tournaments.findOne(socket.data.user, dto.tournamentId);
+    await socket.join(rooms.tournament(dto.tournamentId));
+    return ok({ tournamentId: dto.tournamentId });
+  }
+
+  @SubscribeMessage('tournament:unwatch')
+  async unwatchTournament(
+    @ConnectedSocket() socket: GameSocket,
+    @MessageBody() dto: TournamentIdDto,
+  ) {
+    await socket.leave(rooms.tournament(dto.tournamentId));
+    return ok({ tournamentId: dto.tournamentId });
   }
 }

@@ -174,19 +174,3 @@ export function ParticipantsCard({
     </Card>
   );
 }
-
-export function LeaderboardPlaceholder() {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Leaderboard & results</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <EmptyState
-          title="No games played yet"
-          description="Standings and per-match results appear here once games are played."
-        />
-      </CardContent>
-    </Card>
-  );
-}

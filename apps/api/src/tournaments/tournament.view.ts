@@ -1,4 +1,11 @@
-import type { Tournament, TournamentStatus } from '../db/schema';
+import type {
+  MatchResult,
+  MatchStatus,
+  MatchTermination,
+  Tournament,
+  TournamentStatus,
+} from '../db/schema';
+import type { StandingRow } from './domain/standings';
 import { formatTimeControl } from './domain/time-control';
 
 /** What the API returns for a tournament. */
@@ -44,4 +51,30 @@ export function toTournamentView(
     createdAt: t.createdAt.toISOString(),
     updatedAt: t.updatedAt.toISOString(),
   };
+}
+
+/** GET /tournaments/:id/leaderboard */
+export interface LeaderboardView {
+  tournamentId: string;
+  status: TournamentStatus;
+  /** True once the tournament is completed: the standings can no longer change. */
+  final: boolean;
+  /** Integers only: halfPoints ÷ 2 and sbQuarters ÷ 4 for display. */
+  rows: StandingRow[];
+  /** Rank-1 players once final (more than one = co-winners); empty before that. */
+  winners: { id: string; name: string }[];
+}
+
+/** GET /tournaments/:id/matches: one row per game, newest first. */
+export interface TournamentMatchView {
+  id: string;
+  white: { id: string; name: string };
+  black: { id: string; name: string };
+  status: MatchStatus;
+  result: MatchResult | null;
+  termination: MatchTermination | null;
+  /** Half-moves played. */
+  plies: number;
+  startedAt: string;
+  endedAt: string | null;
 }

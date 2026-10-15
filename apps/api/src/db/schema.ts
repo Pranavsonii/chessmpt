@@ -259,6 +259,7 @@ export type NewTournament = typeof tournaments.$inferInsert;
 export type TournamentStatus = (typeof tournamentStatus.enumValues)[number];
 export type Match = typeof matches.$inferSelect;
 export type NewMatch = typeof matches.$inferInsert;
+export type MatchStatus = (typeof matchStatus.enumValues)[number];
 export type MatchResult = (typeof matchResult.enumValues)[number];
 export type MatchTermination = (typeof matchTermination.enumValues)[number];
 export type Move = typeof moves.$inferSelect;

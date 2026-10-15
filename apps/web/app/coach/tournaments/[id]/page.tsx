@@ -2,17 +2,24 @@
 
 import { useParams } from "next/navigation";
 import { CoachActions } from "@/components/tournaments/coach-actions";
+import {
+  LeaderboardCard,
+  ResultsCard,
+  TournamentStats,
+  WinnerBanner,
+} from "@/components/tournaments/results";
 import { StatusBadge } from "@/components/tournaments/status-badge";
 import {
   BackLink,
-  LeaderboardPlaceholder,
   ParticipantsCard,
   TournamentFacts,
   TournamentLoader,
 } from "@/components/tournaments/tournament-details";
+import { useWatchTournament } from "@/lib/tournaments";
 
 export default function CoachTournamentPage() {
   const { id } = useParams<{ id: string }>();
+  useWatchTournament(id);
 
   return (
     <TournamentLoader id={id} back={<BackLink href="/coach" label="All tournaments" />}>
@@ -28,12 +35,15 @@ export default function CoachTournamentPage() {
             <CoachActions tournament={t} />
           </div>
 
+          <WinnerBanner tournament={t} />
           <TournamentFacts tournament={t} />
+          <TournamentStats tournament={t} />
 
           <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_2fr]">
             <ParticipantsCard tournament={t} />
-            <LeaderboardPlaceholder />
+            <LeaderboardCard tournament={t} />
           </div>
+          <ResultsCard tournament={t} />
         </>
       )}
     </TournamentLoader>

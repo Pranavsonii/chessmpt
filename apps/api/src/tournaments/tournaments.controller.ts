@@ -56,6 +56,22 @@ export class TournamentsController {
     return this.tournaments.participants(user, id);
   }
 
+  @Get(':id/leaderboard')
+  leaderboard(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.tournaments.leaderboard(user, id);
+  }
+
+  @Get(':id/matches')
+  matches(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.tournaments.matches(user, id);
+  }
+
   @Roles('coach')
   @Post()
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateTournamentDto) {

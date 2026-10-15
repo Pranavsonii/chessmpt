@@ -53,3 +53,21 @@ export function toIstInputValue(iso: string): string {
  * "2026-10-16T17:00" → "2026-10-16T17:00:00+05:30", whatever the browser's own timezone is.
  */
 export const fromIstInputValue = (value: string) => `${value}:00${IST_OFFSET}`;
+
+// ---------------------------------------------------------------- scores
+// The API sends scores as integers (half-points, quarter-points) so its maths and
+// tie checks are exact; fractions only appear here, for display.
+
+const FRACTION = ["", "¼", "½", "¾"] as const;
+
+function fromQuarters(quarters: number): string {
+  const whole = Math.floor(quarters / 4);
+  const rest = FRACTION[quarters % 4];
+  return whole === 0 && rest ? rest : `${whole}${rest}`;
+}
+
+/** Half-points → chess points: 5 → "2½", 1 → "½", 0 → "0". */
+export const formatPoints = (halfPoints: number) => fromQuarters(halfPoints * 2);
+
+/** Sonneborn-Berger quarter-points → "1¾". */
+export const formatSb = (quarters: number) => fromQuarters(quarters);
