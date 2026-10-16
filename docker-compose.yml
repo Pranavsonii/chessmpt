@@ -38,6 +38,9 @@ services:
       WEB_ORIGIN: http://localhost:${WEB_PORT:-3000}
       COOKIE_SECURE: "false" # the demo runs on plain http
       SEED_ON_START: "true"
+      # The seed refuses to run in production unless allowed: this demo wants the
+      # documented accounts (it resets their passwords to the README values).
+      ALLOW_SEED: "true"
     ports:
       - "${API_PORT:-4000}:4000"
     healthcheck:
